@@ -11,19 +11,336 @@ import {
 } from './calc.js';
 import { drawDualAxisChart } from './chart.js';
 
+// 汇率缓存
+let cnyToUsdRate = null;
+let rateLastUpdated = null;
+
+// 获取实时汇率（CNY to USD）
+async function fetchExchangeRate() {
+  try {
+    // 使用免费的 exchangerate.host API
+    const response = await fetch('https://api.exchangerate.host/latest?base=CNY&symbols=USD');
+    const data = await response.json();
+    if (data.success !== false && data.rates && data.rates.USD) {
+      cnyToUsdRate = data.rates.USD;
+      rateLastUpdated = new Date();
+      console.log(`汇率更新: 1 CNY = ${cnyToUsdRate.toFixed(4)} USD`);
+      return cnyToUsdRate;
+    }
+  } catch (e) {
+    console.warn('获取汇率失败，尝试备用 API...');
+  }
+  
+  // 备用 API
+  try {
+    const response = await fetch('https://api.exchangerate-api.com/v4/latest/CNY');
+    const data = await response.json();
+    if (data.rates && data.rates.USD) {
+      cnyToUsdRate = data.rates.USD;
+      rateLastUpdated = new Date();
+      console.log(`汇率更新 (备用): 1 CNY = ${cnyToUsdRate.toFixed(4)} USD`);
+      return cnyToUsdRate;
+    }
+  } catch (e) {
+    console.warn('备用汇率 API 也失败了');
+  }
+  
+  return null;
+}
+
+// 格式化美元金额
+function formatUsd(cnyAmount) {
+  if (!cnyToUsdRate || !isFinite(cnyAmount)) return '';
+  const usd = cnyAmount * cnyToUsdRate;
+  if (usd >= 1e6) return `≈ $${(usd / 1e6).toFixed(2)}M`;
+  if (usd >= 1e3) return `≈ $${(usd / 1e3).toFixed(0)}K`;
+  return `≈ $${usd.toFixed(0)}`;
+}
+
+// 更新汇率显示
+function updateExchangeRateDisplay() {
+  const el = document.getElementById('exchangeRateDisplay');
+  if (!el) return;
+  if (cnyToUsdRate) {
+    const rateStr = (1 / cnyToUsdRate).toFixed(2); // 1 USD = ? CNY
+    el.textContent = `(汇率: 1 USD = ${rateStr} CNY)`;
+  } else {
+    el.textContent = '';
+  }
+}
+
+// URL 参数工具
+function getUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    age: params.get('age'),
+    savings: params.get('savings'),
+    life: params.get('life'),
+    inflation: params.get('inflation'),
+    return: params.get('return'),
+    desiredMonthly: params.get('desiredMonthly'),
+    retireAge: params.get('retireAge'),
+  };
+}
+
+function updateUrlParams(values) {
+  const params = new URLSearchParams();
+  if (values.age) params.set('age', values.age);
+  if (values.savings) params.set('savings', values.savings);
+  if (values.life) params.set('life', values.life);
+  if (values.inflation) params.set('inflation', values.inflation);
+  if (values.return) params.set('return', values.return);
+  if (values.desiredMonthly) params.set('desiredMonthly', values.desiredMonthly);
+  if (values.retireAge) params.set('retireAge', values.retireAge);
+  const newUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}`;
+  window.history.replaceState({}, '', newUrl);
+}
+
+// 数据持久化
+const STORAGE_KEY = 'fire_calculator_data';
+
+function saveToLocalStorage(data) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.warn('保存数据失败', e);
+  }
+}
+
+function loadFromLocalStorage() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch (e) {
+    console.warn('读取数据失败', e);
+    return null;
+  }
+}
+
+// 暗色模式
+function initDarkMode() {
+  const toggle = document.getElementById('darkModeToggle');
+  const saved = localStorage.getItem('darkMode');
+  if (saved === 'true' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    if (toggle) toggle.textContent = '☀️';
+  }
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      if (isDark) {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('darkMode', 'false');
+        toggle.textContent = '🌙';
+      } else {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('darkMode', 'true');
+        toggle.textContent = '☀️';
+      }
+    });
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  // 初始化暗色模式
+  initDarkMode();
+  // 页面加载时获取汇率
+  fetchExchangeRate().then(() => updateExchangeRateDisplay());
   const form = document.getElementById('calc-form');
   const resetBtn = document.getElementById('reset');
   const monthlyEl = document.getElementById('monthly');
-  // months 已移除
+  const monthlyAnnualEl = document.getElementById('monthlyAnnual');
   const requiredEl = document.getElementById('requiredSavings');
+  const requiredUsdEl = document.getElementById('requiredSavingsUsd');
   const requiredAtRetireEl = document.getElementById('requiredAtRetire');
+  const requiredAtRetireUsdEl = document.getElementById('requiredAtRetireUsd');
   const reverseGroup = document.getElementById('reverseGroup');
   const reverseBtn = document.getElementById('reverseBtn');
   const chartCanvas = document.getElementById('balanceChart');
   const exportBtn = document.getElementById('exportPng');
 
+  // 格式化提示元素
+  const savingsInput = document.getElementById('savings');
+  const savingsHint = document.getElementById('savingsHint');
+  const desiredMonthlyInput = document.getElementById('desiredMonthly');
+  const desiredMonthlyHint = document.getElementById('desiredMonthlyHint');
+
   let balanceChart = null;
+
+  // 解析带千分位的数字
+  function parseFormattedNumber(str) {
+    if (!str) return NaN;
+    return parseFloat(String(str).replace(/,/g, ''));
+  }
+
+  // 格式化为千分位
+  function formatWithCommas(value) {
+    const n = parseFormattedNumber(value);
+    if (!isFinite(n)) return '';
+    return n.toLocaleString('en-US');
+  }
+
+  // 格式化大数字为万/亿
+  function formatHint(value) {
+    const n = parseFormattedNumber(value);
+    if (!isFinite(n) || n === 0) return '';
+    const abs = Math.abs(n);
+    if (abs >= 1e8) return `= ${(n / 1e8).toFixed(2).replace(/\.00$/, '')} 亿`;
+    if (abs >= 1e4) return `= ${(n / 1e4).toFixed(2).replace(/\.00$/, '')} 万`;
+    return '';
+  }
+
+  // 更新格式化提示
+  function updateFormatHints() {
+    if (savingsHint) savingsHint.textContent = formatHint(savingsInput.value);
+    if (desiredMonthlyHint) desiredMonthlyHint.textContent = formatHint(desiredMonthlyInput?.value);
+  }
+
+  // 千分位输入框：始终保持千分位格式
+  function setupMoneyInput(input) {
+    if (!input) return;
+    
+    let lastValue = input.value;
+    let lastCursor = 0;
+    
+    // 计算字符串中某位置左边有多少个数字
+    function countDigitsBeforeCursor(str, cursor) {
+      let count = 0;
+      for (let i = 0; i < cursor && i < str.length; i++) {
+        if (/\d/.test(str[i])) count++;
+      }
+      return count;
+    }
+    
+    // 根据数字个数找到格式化后的光标位置
+    function findCursorByDigitCount(str, digitCount) {
+      let count = 0;
+      for (let i = 0; i <= str.length; i++) {
+        if (count === digitCount) return i;
+        if (i < str.length && /\d/.test(str[i])) count++;
+      }
+      return str.length;
+    }
+    
+    // 记录按键前的状态
+    input.addEventListener('keydown', () => {
+      lastValue = input.value;
+      lastCursor = input.selectionStart;
+    });
+    
+    input.addEventListener('input', () => {
+      const cursorPos = input.selectionStart;
+      const currentValue = input.value;
+      
+      // 计算当前光标左边有多少个数字
+      let digitsBeforeCursor = countDigitsBeforeCursor(currentValue, cursorPos);
+      
+      // 检测是否是删除逗号的操作
+      if (currentValue.length === lastValue.length - 1 && lastCursor > 0) {
+        const deletedChar = lastValue[lastCursor - 1];
+        if (deletedChar === ',') {
+          // 删除逗号时，实际删除逗号左边的数字
+          digitsBeforeCursor = countDigitsBeforeCursor(lastValue, lastCursor - 1) - 1;
+          digitsBeforeCursor = Math.max(0, digitsBeforeCursor);
+        }
+      }
+      
+      // 只保留数字并格式化
+      const raw = currentValue.replace(/[^\d]/g, '');
+      
+      // 如果删除的是逗号，需要额外删一个数字
+      let finalRaw = raw;
+      if (currentValue.length === lastValue.length - 1 && lastCursor > 0) {
+        const deletedChar = lastValue[lastCursor - 1];
+        if (deletedChar === ',') {
+          const deletePos = countDigitsBeforeCursor(lastValue, lastCursor - 1) - 1;
+          if (deletePos >= 0) {
+            finalRaw = raw.slice(0, deletePos) + raw.slice(deletePos + 1);
+          }
+        }
+      }
+      
+      const num = parseInt(finalRaw, 10);
+      
+      if (finalRaw === '' || isNaN(num)) {
+        input.value = '';
+      } else {
+        input.value = num.toLocaleString('en-US');
+      }
+      
+      // 根据数字个数定位光标
+      const newCursor = findCursorByDigitCount(input.value, digitsBeforeCursor);
+      input.setSelectionRange(newCursor, newCursor);
+      
+      updateFormatHints();
+    });
+    
+    input.addEventListener('blur', () => {
+      const formatted = formatWithCommas(input.value);
+      if (formatted) input.value = formatted;
+      updateFormatHints();
+    });
+  }
+
+  setupMoneyInput(savingsInput);
+  setupMoneyInput(desiredMonthlyInput);
+
+  // 滑动条同步
+  function setupSliderSync(numberId, sliderId) {
+    const numberInput = document.getElementById(numberId);
+    const sliderInput = document.getElementById(sliderId);
+    if (!numberInput || !sliderInput) return;
+    
+    // 初始同步
+    sliderInput.value = numberInput.value;
+    
+    // number -> slider
+    numberInput.addEventListener('input', () => {
+      sliderInput.value = numberInput.value;
+    });
+    
+    // slider -> number，并实时计算
+    sliderInput.addEventListener('input', () => {
+      numberInput.value = sliderInput.value;
+      // 触发计算
+      onSubmit(new Event('submit'));
+    });
+  }
+  
+  setupSliderSync('inflation', 'inflationSlider');
+  setupSliderSync('ret', 'retSlider');
+
+  // 从 URL 参数或 localStorage 加载值
+  function loadSavedData() {
+    const params = getUrlParams();
+    const hasUrlParams = Object.values(params).some(v => v !== null);
+    
+    // 优先使用 URL 参数，否则使用 localStorage
+    const data = hasUrlParams ? params : loadFromLocalStorage();
+    if (!data) return;
+    
+    if (data.age) document.getElementById('age').value = data.age;
+    if (data.savings) {
+      const num = parseInt(String(data.savings).replace(/,/g, ''), 10);
+      if (!isNaN(num)) savingsInput.value = num.toLocaleString('en-US');
+    }
+    if (data.life) document.getElementById('life').value = data.life;
+    if (data.inflation) {
+      document.getElementById('inflation').value = data.inflation;
+      const slider = document.getElementById('inflationSlider');
+      if (slider) slider.value = data.inflation;
+    }
+    if (data.return) {
+      document.getElementById('ret').value = data.return;
+      const slider = document.getElementById('retSlider');
+      if (slider) slider.value = data.return;
+    }
+    if (data.desiredMonthly) {
+      const num = parseInt(String(data.desiredMonthly).replace(/,/g, ''), 10);
+      if (!isNaN(num)) desiredMonthlyInput.value = num.toLocaleString('en-US');
+    }
+    if (data.retireAge) document.getElementById('retireAge').value = data.retireAge;
+  }
 
   // 格式化函数改由 calc.js 提供
 
@@ -67,6 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function clearOutputs() {
     monthlyEl.textContent = '—';
+    if (monthlyAnnualEl) monthlyAnnualEl.textContent = '';
     showError('');
     if (balanceChart) {
       balanceChart.destroy();
@@ -89,7 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showError('');
 
     const age = parseFloat(document.getElementById('age').value);
-    const savings = parseFloat(document.getElementById('savings').value);
+    const savings = parseFormattedNumber(document.getElementById('savings').value);
     const life = parseFloat(document.getElementById('life').value);
     const inflationPct = parseFloat(document.getElementById('inflation').value);
     const nominalReturnPct = parseFloat(document.getElementById('ret').value);
@@ -126,6 +444,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const { w, months } = calculateMonthlySpendableIncome({ age, savings, life, inflationPct, nominalReturnPct });
 
     monthlyEl.textContent = formatCurrency(w);
+    // 显示年度金额
+    if (monthlyAnnualEl) {
+      const annual = w * 12;
+      monthlyAnnualEl.textContent = `≈ ${formatLargeNumber(annual)}/年`;
+    }
 
     // 主计算结束：隐藏反推结果
     requiredEl.textContent = '—';
@@ -140,6 +463,19 @@ document.addEventListener('DOMContentLoaded', () => {
       incomeNominal,
     });
     drawChart({ labels, balanceRaw: balancesNominal, incomeRaw: incomeNominal, startAge: age });
+    
+    // 更新 URL 参数
+    const dataToSave = {
+      age: age,
+      savings: savings,
+      life: life,
+      inflation: inflationPct,
+      return: nominalReturnPct,
+    };
+    updateUrlParams(dataToSave);
+    
+    // 保存到 localStorage
+    saveToLocalStorage(dataToSave);
   }
 
   function onReset() {
@@ -147,6 +483,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
       // 恢复动态默认年龄（基于 DOB）
       setDefaultAgeFromDOB(defaults.dob);
+      // 格式化金额输入框
+      if (savingsInput) savingsInput.value = formatWithCommas(savingsInput.value);
+      // 更新格式化提示
+      updateFormatHints();
       // 立即按默认值重算并绘图
       onSubmit(new Event('submit'));
     }, 0);
@@ -163,7 +503,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const life = parseFloat(document.getElementById('life').value);
       const inflationPct = parseFloat(document.getElementById('inflation').value);
       const nominalReturnPct = parseFloat(document.getElementById('ret').value);
-      const desiredMonthly = parseFloat(document.getElementById('desiredMonthly').value);
+      const desiredMonthly = parseFormattedNumber(document.getElementById('desiredMonthly').value);
       const retireAgeInput = document.getElementById('retireAge').value;
       const retireAge = retireAgeInput === '' ? age : parseFloat(retireAgeInput);
 
@@ -188,21 +528,196 @@ document.addEventListener('DOMContentLoaded', () => {
         annualNominalReturnRatePct: nominalReturnPct,
         desiredMonthlyReal: desiredMonthly,
       });
-      requiredEl.textContent = formatCurrency(req.requiredTodayReal);
-      requiredAtRetireEl.textContent = formatCurrency(req.requiredAtRetireNominal);
+      // 用万/亿格式显示，更直观
+      requiredEl.textContent = `约 ${formatLargeNumber(req.requiredTodayReal)}`;
+      requiredAtRetireEl.textContent = `约 ${formatLargeNumber(req.requiredAtRetireNominal)}`;
+      // 显示美元等值
+      if (requiredUsdEl) requiredUsdEl.textContent = formatUsd(req.requiredTodayReal);
+      if (requiredAtRetireUsdEl) requiredAtRetireUsdEl.textContent = formatUsd(req.requiredAtRetireNominal);
       if (reverseGroup) reverseGroup.style.display = '';
     });
   }
 
-  // 导出图表 PNG
+  // 分享面板
+  const shareBtn = document.getElementById('shareBtn');
+  const sharePanel = document.getElementById('sharePanel');
+  const shareQrContainer = document.getElementById('shareQr');
+  const shareTip = document.getElementById('shareTip');
+  const copyLinkBtn = document.getElementById('copyLink');
+  const shareWechatMomentsBtn = document.getElementById('shareWechatMoments');
+  const shareWechatFriendBtn = document.getElementById('shareWechatFriend');
+  const shareXiaohongshuBtn = document.getElementById('shareXiaohongshu');
+  
+  let qrGenerated = false;
+  
+  // 显示提示
+  function showShareTip(msg) {
+    if (!shareTip) return;
+    shareTip.textContent = msg;
+    shareTip.classList.add('active');
+    setTimeout(() => shareTip.classList.remove('active'), 4000);
+  }
+  
+  // 复制到剪贴板
+  async function copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      const input = document.createElement('input');
+      input.value = text;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      return true;
+    }
+  }
+  
+  // 生成二维码
+  function generateQR() {
+    if (qrGenerated || !shareQrContainer || typeof QRCode === 'undefined') return;
+    shareQrContainer.innerHTML = '';
+    QRCode.toCanvas(window.location.href, {
+      width: 140,
+      margin: 2,
+      color: {
+        dark: document.documentElement.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#0f172a',
+        light: document.documentElement.getAttribute('data-theme') === 'dark' ? '#1e293b' : '#ffffff',
+      }
+    }, (err, canvas) => {
+      if (!err && canvas) {
+        shareQrContainer.appendChild(canvas);
+        qrGenerated = true;
+      }
+    });
+  }
+  
+  // 切换分享面板
+  if (shareBtn && sharePanel) {
+    shareBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isActive = sharePanel.classList.contains('active');
+      sharePanel.classList.toggle('active');
+      if (!isActive) {
+        qrGenerated = false;
+        generateQR();
+        if (shareTip) shareTip.classList.remove('active');
+      }
+    });
+    
+    // 点击外部关闭
+    document.addEventListener('click', (e) => {
+      if (!sharePanel.contains(e.target) && e.target !== shareBtn) {
+        sharePanel.classList.remove('active');
+      }
+    });
+  }
+  
+  // 复制链接
+  if (copyLinkBtn) {
+    copyLinkBtn.addEventListener('click', async () => {
+      await copyToClipboard(window.location.href);
+      const span = copyLinkBtn.querySelector('span:last-child');
+      const original = span.textContent;
+      span.textContent = '已复制!';
+      setTimeout(() => { span.textContent = original; }, 2000);
+    });
+  }
+  
+  // 微信朋友圈
+  if (shareWechatMomentsBtn) {
+    shareWechatMomentsBtn.addEventListener('click', async () => {
+      await copyToClipboard(window.location.href);
+      showShareTip('✅ 链接已复制！打开微信 → 朋友圈 → 粘贴链接发布');
+    });
+  }
+  
+  // 微信好友
+  if (shareWechatFriendBtn) {
+    shareWechatFriendBtn.addEventListener('click', async () => {
+      await copyToClipboard(window.location.href);
+      showShareTip('✅ 链接已复制！打开微信 → 发送给好友');
+    });
+  }
+  
+  // 小红书
+  if (shareXiaohongshuBtn) {
+    shareXiaohongshuBtn.addEventListener('click', async () => {
+      const text = `财务自由计算器 📊\n算算你需要多少存款才能退休！\n${window.location.href}`;
+      await copyToClipboard(text);
+      showShareTip('✅ 已复制文案和链接！打开小红书 → 发布笔记 → 粘贴');
+    });
+  }
+
+  // 导出增强版 PNG（带参数信息）
   if (exportBtn) {
     exportBtn.addEventListener('click', () => {
       try {
+        // 获取当前参数
+        const age = document.getElementById('age').value;
+        const savings = parseFormattedNumber(savingsInput.value);
+        const life = document.getElementById('life').value;
+        const inflationPct = document.getElementById('inflation').value;
+        const nominalReturnPct = document.getElementById('ret').value;
+        const monthlyIncome = monthlyEl.textContent;
+        const annualIncome = monthlyAnnualEl?.textContent || '';
+        
+        // 创建增强版画布
+        const padding = 40;
+        const headerHeight = 120;
+        const footerHeight = 50;
+        const chartWidth = chartCanvas.width;
+        const chartHeight = chartCanvas.height;
+        
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = chartWidth + padding * 2;
+        exportCanvas.height = chartHeight + headerHeight + footerHeight + padding;
+        const ctx = exportCanvas.getContext('2d');
+        
+        // 背景
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        ctx.fillStyle = isDark ? '#0f172a' : '#ffffff';
+        ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        
+        // 标题
+        ctx.fillStyle = isDark ? '#f1f5f9' : '#0f172a';
+        ctx.font = 'bold 28px system-ui, -apple-system, sans-serif';
+        ctx.fillText('财务自由计算器', padding, padding + 30);
+        
+        // 参数信息
+        ctx.font = '16px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+        const paramsText = `年龄 ${age}岁 | 存款 ${formatLargeNumber(savings)} | 预期寿命 ${life}岁 | 通胀 ${inflationPct}% | 收益 ${nominalReturnPct}%`;
+        ctx.fillText(paramsText, padding, padding + 60);
+        
+        // 核心结果
+        ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = isDark ? '#22c55e' : '#047857';
+        ctx.fillText(`每月可支配收入: ${monthlyIncome} ${annualIncome}`, padding, padding + 95);
+        
+        // 绘制原图表
+        ctx.drawImage(chartCanvas, padding, headerHeight + padding / 2);
+        
+        // 底部水印
+        ctx.font = '14px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = isDark ? '#64748b' : '#94a3b8';
+        const footerY = headerHeight + chartHeight + padding;
+        ctx.fillText('fire-zeta.vercel.app', padding, footerY);
+        
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        ctx.textAlign = 'right';
+        ctx.fillText(dateStr, exportCanvas.width - padding, footerY);
+        ctx.textAlign = 'left';
+        
+        // 下载
         const link = document.createElement('a');
-        link.download = 'financial-freedom-chart.png';
-        link.href = chartCanvas.toDataURL('image/png');
+        link.download = `FIRE-${age}岁-${formatLargeNumber(savings)}-${dateStr}.png`;
+        link.href = exportCanvas.toDataURL('image/png');
         link.click();
       } catch (e) {
+        console.error(e);
         showError('导出失败，请重试');
       }
     });
@@ -212,6 +727,10 @@ document.addEventListener('DOMContentLoaded', () => {
   clearOutputs();
   // 设置默认年龄为 1995-01-12 出生对应的当前年龄
   setDefaultAgeFromDOB(defaults.dob);
+  // 从 URL 参数或 localStorage 加载（覆盖默认值）
+  loadSavedData();
+  // 初始化格式化提示
+  updateFormatHints();
   // 首次加载根据默认值绘图
   onSubmit(new Event('submit'));
 });
