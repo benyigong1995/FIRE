@@ -368,14 +368,21 @@ button[type="button"] {
 #balanceChart {
   width: 100%;
   height: 350px;
-  min-height: 280px;
+  max-height: 400px;
   display: block;
 }
-/* 移动端横屏时保证最小高度 */
+/* 移动端竖屏 */
+@media (max-width: 600px) {
+  #balanceChart {
+    height: 300px;
+    max-height: 350px;
+  }
+}
+/* 移动端横屏 */
 @media (max-height: 500px) and (orientation: landscape) {
   #balanceChart {
-    height: 250px;
-    min-height: 200px;
+    height: 220px;
+    max-height: 250px;
   }
 }
 .chart-actions {
