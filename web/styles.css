@@ -466,6 +466,58 @@ button[type="button"] {
 .share-tip.active {
   display: block;
 }
+
+/* 图片预览模态框 */
+.image-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 1000;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.image-modal.active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 20px;
+}
+.image-modal-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 500px;
+}
+.image-modal-tip {
+  background: #047857;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 25px;
+  font-size: 16px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.image-modal img {
+  max-width: 100%;
+  border-radius: 12px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+}
+.image-modal-close {
+  margin-top: 20px;
+  background: var(--accent-blue);
+  color: white;
+  border: none;
+  padding: 14px 32px;
+  border-radius: 25px;
+  font-size: 16px;
+  cursor: pointer;
+}
 .error-box {
   display: none;
   margin: 8px 0 12px;

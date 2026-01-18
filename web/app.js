@@ -85,13 +85,14 @@ function getUrlParams() {
 
 function updateUrlParams(values) {
   const params = new URLSearchParams();
-  if (values.age) params.set('age', values.age);
-  if (values.savings) params.set('savings', values.savings);
-  if (values.life) params.set('life', values.life);
-  if (values.inflation) params.set('inflation', values.inflation);
-  if (values.return) params.set('return', values.return);
-  if (values.desiredMonthly) params.set('desiredMonthly', values.desiredMonthly);
-  if (values.retireAge) params.set('retireAge', values.retireAge);
+  // 使用 != null 检查以支持 0 值
+  if (values.age != null) params.set('age', values.age);
+  if (values.savings != null) params.set('savings', values.savings);
+  if (values.life != null) params.set('life', values.life);
+  if (values.inflation != null) params.set('inflation', values.inflation);
+  if (values.return != null) params.set('return', values.return);
+  if (values.desiredMonthly != null) params.set('desiredMonthly', values.desiredMonthly);
+  if (values.retireAge != null) params.set('retireAge', values.retireAge);
   const newUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}`;
   window.history.replaceState({}, '', newUrl);
 }
@@ -248,19 +249,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // 只保留数字并格式化
       const raw = currentValue.replace(/[^\d]/g, '');
       
-      // 如果删除的是逗号，需要额外删一个数字
-      let finalRaw = raw;
-      if (currentValue.length === lastValue.length - 1 && lastCursor > 0) {
-        const deletedChar = lastValue[lastCursor - 1];
-        if (deletedChar === ',') {
-          const deletePos = countDigitsBeforeCursor(lastValue, lastCursor - 1) - 1;
-          if (deletePos >= 0) {
-            finalRaw = raw.slice(0, deletePos) + raw.slice(deletePos + 1);
-          }
-        }
-      }
-      
-      const num = parseInt(finalRaw, 10);
+      // 如果删除的是逗号，不需要额外删除数字（逗号是装饰性的）
+      // 直接使用 raw，格式化后逗号会自动正确放置
+      const num = parseInt(raw, 10);
       
       if (finalRaw === '' || isNaN(num)) {
         input.value = '';
@@ -310,36 +301,44 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSliderSync('inflation', 'inflationSlider');
   setupSliderSync('ret', 'retSlider');
 
-  // 从 URL 参数或 localStorage 加载值
+  // 从 URL 参数或 localStorage 加载值（合并两者，URL 优先）
   function loadSavedData() {
     const params = getUrlParams();
-    const hasUrlParams = Object.values(params).some(v => v !== null);
+    const stored = loadFromLocalStorage() || {};
     
-    // 优先使用 URL 参数，否则使用 localStorage
-    const data = hasUrlParams ? params : loadFromLocalStorage();
-    if (!data) return;
+    // 合并：localStorage 作为基础，URL 参数覆盖
+    const data = {
+      age: params.age ?? stored.age,
+      savings: params.savings ?? stored.savings,
+      life: params.life ?? stored.life,
+      inflation: params.inflation ?? stored.inflation,
+      return: params.return ?? stored.return,
+      desiredMonthly: params.desiredMonthly ?? stored.desiredMonthly,
+      retireAge: params.retireAge ?? stored.retireAge,
+    };
     
-    if (data.age) document.getElementById('age').value = data.age;
-    if (data.savings) {
+    // 使用 != null 检查以支持 0 值
+    if (data.age != null) document.getElementById('age').value = data.age;
+    if (data.savings != null) {
       const num = parseInt(String(data.savings).replace(/,/g, ''), 10);
       if (!isNaN(num)) savingsInput.value = num.toLocaleString('en-US');
     }
-    if (data.life) document.getElementById('life').value = data.life;
-    if (data.inflation) {
+    if (data.life != null) document.getElementById('life').value = data.life;
+    if (data.inflation != null) {
       document.getElementById('inflation').value = data.inflation;
       const slider = document.getElementById('inflationSlider');
       if (slider) slider.value = data.inflation;
     }
-    if (data.return) {
+    if (data.return != null) {
       document.getElementById('ret').value = data.return;
       const slider = document.getElementById('retSlider');
       if (slider) slider.value = data.return;
     }
-    if (data.desiredMonthly) {
+    if (data.desiredMonthly != null) {
       const num = parseInt(String(data.desiredMonthly).replace(/,/g, ''), 10);
       if (!isNaN(num)) desiredMonthlyInput.value = num.toLocaleString('en-US');
     }
-    if (data.retireAge) document.getElementById('retireAge').value = data.retireAge;
+    if (data.retireAge != null) document.getElementById('retireAge').value = data.retireAge;
   }
 
   // 格式化函数改由 calc.js 提供
@@ -519,6 +518,18 @@ document.addEventListener('DOMContentLoaded', () => {
         showError('请输入期望月开销（今日购买力）。');
         return;
       }
+      if (Number.isNaN(retireAge) || !isFinite(retireAge)) {
+        showError('请输入有效的目标退休年龄。');
+        return;
+      }
+      if (retireAge < age) {
+        showError('目标退休年龄不能小于当前年龄。');
+        return;
+      }
+      if (retireAge >= life) {
+        showError('目标退休年龄必须小于预期寿命。');
+        return;
+      }
 
       const req = calculateRequiredCurrentSavingsForDesiredRealIncome({
         currentAgeYears: age,
@@ -683,6 +694,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 图片模态框
+  const imageModal = document.getElementById('imageModal');
+  const imageModalImg = document.getElementById('imageModalImg');
+  const imageModalClose = document.getElementById('imageModalClose');
+  
+  if (imageModalClose && imageModal) {
+    imageModalClose.addEventListener('click', () => {
+      imageModal.classList.remove('active');
+    });
+  }
+
   // 导出增强版 PNG（带参数信息）
   if (exportBtn) {
     exportBtn.addEventListener('click', () => {
@@ -696,87 +718,116 @@ document.addEventListener('DOMContentLoaded', () => {
         const monthlyIncome = monthlyEl.textContent;
         const annualIncome = monthlyAnnualEl?.textContent || '';
         
-        // 创建增强版画布
-        const padding = 40;
-        const headerHeight = 120;
-        const footerHeight = 50;
-        const chartWidth = chartCanvas.width;
-        const chartHeight = chartCanvas.height;
-        
-        const exportCanvas = document.createElement('canvas');
-        exportCanvas.width = chartWidth + padding * 2;
-        exportCanvas.height = chartHeight + headerHeight + footerHeight + padding;
-        const ctx = exportCanvas.getContext('2d');
-        
-        // 背景
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        ctx.fillStyle = isDark ? '#0f172a' : '#ffffff';
-        ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-        
-        // 标题
-        ctx.fillStyle = isDark ? '#f1f5f9' : '#0f172a';
-        ctx.font = 'bold 28px system-ui, -apple-system, sans-serif';
-        ctx.fillText('财务自由计算器', padding, padding + 30);
-        
-        // 参数信息
-        ctx.font = '16px system-ui, -apple-system, sans-serif';
-        ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
-        const paramsText = `年龄 ${age}岁 | 存款 ${formatLargeNumber(savings)} | 预期寿命 ${life}岁 | 通胀 ${inflationPct}% | 收益 ${nominalReturnPct}%`;
-        ctx.fillText(paramsText, padding, padding + 60);
-        
-        // 核心结果
-        ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-        ctx.fillStyle = isDark ? '#22c55e' : '#047857';
-        ctx.fillText(`每月可支配收入: ${monthlyIncome} ${annualIncome}`, padding, padding + 95);
-        
-        // 绘制原图表
-        ctx.drawImage(chartCanvas, padding, headerHeight + padding / 2);
-        
-        // 底部水印
-        ctx.font = '14px system-ui, -apple-system, sans-serif';
-        ctx.fillStyle = isDark ? '#64748b' : '#94a3b8';
-        const footerY = headerHeight + chartHeight + padding;
-        ctx.fillText('fire-zeta.vercel.app', padding, footerY);
-        
         const now = new Date();
         const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        ctx.textAlign = 'right';
-        ctx.fillText(dateStr, exportCanvas.width - padding, footerY);
-        ctx.textAlign = 'left';
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        
+        // 检测移动端
+        const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        // 创建画布 - 移动端用竖版，桌面端用横版
+        const padding = isMobileDevice ? 30 : 40;
+        const exportCanvas = document.createElement('canvas');
+        const ctx = exportCanvas.getContext('2d');
+        
+        if (isMobileDevice) {
+          // 移动端竖版布局
+          const width = 750; // 适合手机屏幕宽度
+          const headerHeight = 200;
+          const chartAreaHeight = 480;
+          const footerHeight = 60;
+          
+          exportCanvas.width = width;
+          exportCanvas.height = headerHeight + chartAreaHeight + footerHeight;
+          
+          // 背景
+          ctx.fillStyle = isDark ? '#0f172a' : '#ffffff';
+          ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+          
+          // 标题
+          ctx.fillStyle = isDark ? '#f1f5f9' : '#0f172a';
+          ctx.font = 'bold 42px system-ui, -apple-system, sans-serif';
+          ctx.fillText('财务自由计算器', padding, padding + 40);
+          
+          // 参数信息（分两行）
+          ctx.font = '24px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+          ctx.fillText(`年龄 ${age}岁 | 存款 ${formatLargeNumber(savings)} | 寿命 ${life}岁`, padding, padding + 90);
+          ctx.fillText(`通胀 ${inflationPct}% | 收益 ${nominalReturnPct}%`, padding, padding + 125);
+          
+          // 核心结果
+          ctx.font = 'bold 32px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = isDark ? '#22c55e' : '#047857';
+          ctx.fillText(`每月可支配: ${monthlyIncome}`, padding, padding + 175);
+          ctx.font = '26px system-ui, -apple-system, sans-serif';
+          ctx.fillText(annualIncome, padding + 400, padding + 175);
+          
+          // 绘制图表（完整使用分配的空间）
+          const chartW = width - padding * 2;
+          const chartH = chartAreaHeight;
+          ctx.drawImage(chartCanvas, padding, headerHeight, chartW, chartH);
+          
+          // 底部水印（居中在 footer 区域）
+          const footerY = headerHeight + chartAreaHeight + (footerHeight / 2) + 8;
+          ctx.font = '22px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = isDark ? '#64748b' : '#94a3b8';
+          ctx.fillText('fire-zeta.vercel.app', padding, footerY);
+          ctx.textAlign = 'right';
+          ctx.fillText(dateStr, exportCanvas.width - padding, footerY);
+          ctx.textAlign = 'left';
+          
+        } else {
+          // 桌面端横版布局
+          const headerHeight = 120;
+          const footerHeight = 50;
+          const chartWidth = chartCanvas.width;
+          const chartHeight = chartCanvas.height;
+          
+          exportCanvas.width = chartWidth + padding * 2;
+          exportCanvas.height = chartHeight + headerHeight + footerHeight + padding;
+          
+          // 背景
+          ctx.fillStyle = isDark ? '#0f172a' : '#ffffff';
+          ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+          
+          // 标题
+          ctx.fillStyle = isDark ? '#f1f5f9' : '#0f172a';
+          ctx.font = 'bold 28px system-ui, -apple-system, sans-serif';
+          ctx.fillText('财务自由计算器', padding, padding + 30);
+          
+          // 参数信息
+          ctx.font = '16px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+          const paramsText = `年龄 ${age}岁 | 存款 ${formatLargeNumber(savings)} | 预期寿命 ${life}岁 | 通胀 ${inflationPct}% | 收益 ${nominalReturnPct}%`;
+          ctx.fillText(paramsText, padding, padding + 60);
+          
+          // 核心结果
+          ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = isDark ? '#22c55e' : '#047857';
+          ctx.fillText(`每月可支配收入: ${monthlyIncome} ${annualIncome}`, padding, padding + 95);
+          
+          // 绘制原图表
+          ctx.drawImage(chartCanvas, padding, headerHeight + padding / 2);
+          
+          // 底部水印
+          ctx.font = '14px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = isDark ? '#64748b' : '#94a3b8';
+          const footerY = headerHeight + chartHeight + padding;
+          ctx.fillText('fire-zeta.vercel.app', padding, footerY);
+          ctx.textAlign = 'right';
+          ctx.fillText(dateStr, exportCanvas.width - padding, footerY);
+          ctx.textAlign = 'left';
+        }
         
         // 导出图片
         const dataUrl = exportCanvas.toDataURL('image/png');
         const fileName = `FIRE-${age}岁-${formatLargeNumber(savings)}-${dateStr}.png`;
         
-        // 检测移动端
-        const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        
         if (isMobileDevice) {
-          // 移动端：在新窗口打开图片，提示长按保存
-          const newWindow = window.open('', '_blank');
-          if (newWindow) {
-            newWindow.document.write(`
-              <!DOCTYPE html>
-              <html>
-              <head>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <title>保存图片</title>
-                <style>
-                  body { margin: 0; padding: 20px; background: #f5f5f5; text-align: center; font-family: system-ui, sans-serif; }
-                  .tip { background: #047857; color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 16px; display: inline-block; }
-                  img { max-width: 100%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
-                </style>
-              </head>
-              <body>
-                <div class="tip">👆 长按图片保存到相册</div><br>
-                <img src="${dataUrl}" alt="财务自由计算器">
-              </body>
-              </html>
-            `);
-            newWindow.document.close();
-          } else {
-            showShareTip('请允许弹出窗口后重试');
+          // 移动端：使用模态框显示图片
+          if (imageModal && imageModalImg) {
+            imageModalImg.src = dataUrl;
+            imageModal.classList.add('active');
           }
         } else {
           // 桌面端：直接下载
