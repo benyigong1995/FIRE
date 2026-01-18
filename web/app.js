@@ -138,6 +138,9 @@ function initDarkMode() {
         localStorage.setItem('darkMode', 'true');
         toggle.textContent = '☀️';
       }
+      // 切换主题后重新渲染图表
+      const form = document.getElementById('calc-form');
+      if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
     });
   }
 }
