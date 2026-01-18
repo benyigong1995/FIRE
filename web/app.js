@@ -744,11 +744,47 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.fillText(dateStr, exportCanvas.width - padding, footerY);
         ctx.textAlign = 'left';
         
-        // 下载
-        const link = document.createElement('a');
-        link.download = `FIRE-${age}岁-${formatLargeNumber(savings)}-${dateStr}.png`;
-        link.href = exportCanvas.toDataURL('image/png');
-        link.click();
+        // 导出图片
+        const dataUrl = exportCanvas.toDataURL('image/png');
+        const fileName = `FIRE-${age}岁-${formatLargeNumber(savings)}-${dateStr}.png`;
+        
+        // 检测移动端
+        const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        if (isMobileDevice) {
+          // 移动端：在新窗口打开图片，提示长按保存
+          const newWindow = window.open('', '_blank');
+          if (newWindow) {
+            newWindow.document.write(`
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>保存图片</title>
+                <style>
+                  body { margin: 0; padding: 20px; background: #f5f5f5; text-align: center; font-family: system-ui, sans-serif; }
+                  .tip { background: #047857; color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 16px; display: inline-block; }
+                  img { max-width: 100%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+                </style>
+              </head>
+              <body>
+                <div class="tip">👆 长按图片保存到相册</div><br>
+                <img src="${dataUrl}" alt="财务自由计算器">
+              </body>
+              </html>
+            `);
+            newWindow.document.close();
+          } else {
+            showShareTip('请允许弹出窗口后重试');
+          }
+        } else {
+          // 桌面端：直接下载
+          const link = document.createElement('a');
+          link.download = fileName;
+          link.href = dataUrl;
+          link.click();
+        }
       } catch (e) {
         console.error(e);
         showError('导出失败，请重试');
