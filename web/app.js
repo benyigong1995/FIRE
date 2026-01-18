@@ -253,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // 直接使用 raw，格式化后逗号会自动正确放置
       const num = parseInt(raw, 10);
       
-      if (finalRaw === '' || isNaN(num)) {
+      if (raw === '' || isNaN(num)) {
         input.value = '';
       } else {
         input.value = num.toLocaleString('en-US');
