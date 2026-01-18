@@ -728,57 +728,76 @@ document.addEventListener('DOMContentLoaded', () => {
         // 检测移动端
         const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         
-        // 创建画布 - 统一使用横版布局，更适合分享
-        const padding = 40;
+        // 创建高清画布 - 固定尺寸，16:9 比例，适合分享
         const exportCanvas = document.createElement('canvas');
         const ctx = exportCanvas.getContext('2d');
         
-        // 横版布局（移动端和桌面端统一）
-        const headerHeight = 130;
+        // 固定高清尺寸 1600x900 (16:9)
+        const canvasWidth = 1600;
+        const canvasHeight = 900;
+        const padding = 50;
+        const headerHeight = 160;
         const footerHeight = 50;
-        // 移动端导出时使用固定宽度，保证图表清晰
-        const exportWidth = isMobileDevice ? 1200 : chartCanvas.width + padding * 2;
-        const exportChartHeight = isMobileDevice ? 400 : chartCanvas.height;
         
-        exportCanvas.width = exportWidth;
-        exportCanvas.height = exportChartHeight + headerHeight + footerHeight + padding;
+        exportCanvas.width = canvasWidth;
+        exportCanvas.height = canvasHeight;
         
         // 背景
         ctx.fillStyle = isDark ? '#0f172a' : '#ffffff';
-        ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
         
         // 标题
         ctx.fillStyle = isDark ? '#f1f5f9' : '#0f172a';
-        ctx.font = 'bold 32px system-ui, -apple-system, sans-serif';
-        ctx.fillText('财务自由计算器', padding, padding + 32);
+        ctx.font = 'bold 42px system-ui, -apple-system, sans-serif';
+        ctx.fillText('财务自由计算器', padding, padding + 42);
         
         // 参数信息
-        ctx.font = '18px system-ui, -apple-system, sans-serif';
+        ctx.font = '22px system-ui, -apple-system, sans-serif';
         ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
         const paramsText = `年龄 ${age}岁 · 存款 ${formatLargeNumber(savings)} · 预期寿命 ${life}岁 · 通胀 ${inflationPct}% · 收益 ${nominalReturnPct}%`;
-        ctx.fillText(paramsText, padding, padding + 65);
+        ctx.fillText(paramsText, padding, padding + 80);
         
         // 核心结果
-        ctx.font = 'bold 28px system-ui, -apple-system, sans-serif';
+        ctx.font = 'bold 36px system-ui, -apple-system, sans-serif';
         ctx.fillStyle = isDark ? '#22c55e' : '#047857';
-        ctx.fillText(`每月可支配: ${monthlyIncome}`, padding, padding + 105);
+        ctx.fillText(`每月可支配: ${monthlyIncome}`, padding, padding + 130);
         
-        ctx.font = '20px system-ui, -apple-system, sans-serif';
+        ctx.font = '26px system-ui, -apple-system, sans-serif';
         ctx.fillStyle = isDark ? '#4ade80' : '#059669';
-        ctx.fillText(annualIncome, padding + 380, padding + 105);
+        ctx.fillText(annualIncome, padding + 480, padding + 130);
         
-        // 绘制图表
-        const chartW = exportWidth - padding * 2;
-        const chartH = exportChartHeight;
-        ctx.drawImage(chartCanvas, padding, headerHeight, chartW, chartH);
+        // 计算图表区域（保持原始比例，不拉伸）
+        const chartAreaWidth = canvasWidth - padding * 2;
+        const chartAreaHeight = canvasHeight - headerHeight - footerHeight - padding;
+        
+        // 计算保持比例的缩放
+        const chartAspect = chartCanvas.width / chartCanvas.height;
+        let drawWidth, drawHeight, drawX, drawY;
+        
+        if (chartAreaWidth / chartAreaHeight > chartAspect) {
+          // 区域更宽，以高度为准
+          drawHeight = chartAreaHeight;
+          drawWidth = drawHeight * chartAspect;
+          drawX = padding + (chartAreaWidth - drawWidth) / 2;
+          drawY = headerHeight;
+        } else {
+          // 区域更高，以宽度为准
+          drawWidth = chartAreaWidth;
+          drawHeight = drawWidth / chartAspect;
+          drawX = padding;
+          drawY = headerHeight + (chartAreaHeight - drawHeight) / 2;
+        }
+        
+        // 绘制图表（保持比例）
+        ctx.drawImage(chartCanvas, drawX, drawY, drawWidth, drawHeight);
         
         // 底部水印
-        const footerY = headerHeight + exportChartHeight + padding;
-        ctx.font = '16px system-ui, -apple-system, sans-serif';
+        const footerY = canvasHeight - padding + 10;
+        ctx.font = '20px system-ui, -apple-system, sans-serif';
         ctx.fillStyle = isDark ? '#64748b' : '#94a3b8';
         ctx.fillText('fire-zeta.vercel.app', padding, footerY);
         ctx.textAlign = 'right';
-        ctx.fillText(dateStr, exportCanvas.width - padding, footerY);
+        ctx.fillText(dateStr, canvasWidth - padding, footerY);
         ctx.textAlign = 'left';
 
         // 导出图片
