@@ -1,4 +1,4 @@
-import { chartColors, chartFont, assetLogAxis } from './config.js';
+import { getChartColors, chartFont, assetLogAxis } from './config.js';
 import { formatCurrency, formatLargeNumber, formatWan } from './calc.js';
 
 export function isPowerOfTen(val) {
@@ -9,6 +9,9 @@ export function isPowerOfTen(val) {
 
 export function drawDualAxisChart({ canvas, labels, balanceRaw, incomeRaw, startAge }) {
   const startAgeMonths = Math.round(startAge * 12);
+  
+  // 获取当前主题颜色
+  const chartColors = getChartColors();
 
   // 固定资产轴范围，并对零值进行下限裁剪
   const yMinPow = assetLogAxis.min;
@@ -24,21 +27,21 @@ export function drawDualAxisChart({ canvas, labels, balanceRaw, incomeRaw, start
     },
   };
 
-  // 确保导出的 PNG 背景为白色（避免某些查看器显示为深色）
-  const whiteBackground = {
-    id: 'whiteBackground',
+  // 根据主题设置背景色
+  const themedBackground = {
+    id: 'themedBackground',
     beforeDraw(chart) {
       const { ctx, width, height } = chart;
       ctx.save();
       ctx.globalCompositeOperation = 'destination-over';
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = chartColors.background;
       ctx.fillRect(0, 0, width, height);
       ctx.restore();
     },
   };
 
   return new Chart(canvas.getContext('2d'), {
-    plugins: [onlyPow10Ticks, whiteBackground],
+    plugins: [onlyPow10Ticks, themedBackground],
     type: 'line',
     data: {
       labels,
@@ -135,8 +138,8 @@ export function drawDualAxisChart({ canvas, labels, balanceRaw, incomeRaw, start
           labels: { color: chartColors.textPrimary, font: { size: chartFont.legendSize, weight: chartFont.legendWeight } },
         },
         tooltip: {
-          backgroundColor: 'rgba(255,255,255,0.95)',
-          borderColor: '#cbd5e1',
+          backgroundColor: chartColors.tooltipBg,
+          borderColor: chartColors.tooltipBorder,
           borderWidth: 1,
           titleColor: chartColors.textPrimary,
           bodyColor: chartColors.textPrimary,
