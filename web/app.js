@@ -625,17 +625,46 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   
+  // 检测是否移动端
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  
+  // 尝试系统分享（移动端）
+  async function tryNativeShare(title, text) {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: title || '财务自由计算器',
+          text: text || '算算你需要多少存款才能退休',
+          url: window.location.href,
+        });
+        return true;
+      } catch (e) {
+        // 用户取消或不支持
+        return false;
+      }
+    }
+    return false;
+  }
+  
   // 微信朋友圈
   if (shareWechatMomentsBtn) {
     shareWechatMomentsBtn.addEventListener('click', async () => {
+      if (isMobile) {
+        const shared = await tryNativeShare('财务自由计算器', '算算你需要多少存款才能退休！');
+        if (shared) return;
+      }
       await copyToClipboard(window.location.href);
-      showShareTip('✅ 链接已复制！打开微信 → 朋友圈 → 粘贴链接发布');
+      showShareTip('✅ 链接已复制！打开微信 → 朋友圈 → 粘贴链接');
     });
   }
   
   // 微信好友
   if (shareWechatFriendBtn) {
     shareWechatFriendBtn.addEventListener('click', async () => {
+      if (isMobile) {
+        const shared = await tryNativeShare('财务自由计算器', '算算你需要多少存款才能退休！');
+        if (shared) return;
+      }
       await copyToClipboard(window.location.href);
       showShareTip('✅ 链接已复制！打开微信 → 发送给好友');
     });
@@ -644,9 +673,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // 小红书
   if (shareXiaohongshuBtn) {
     shareXiaohongshuBtn.addEventListener('click', async () => {
-      const text = `财务自由计算器 📊\n算算你需要多少存款才能退休！\n${window.location.href}`;
-      await copyToClipboard(text);
-      showShareTip('✅ 已复制文案和链接！打开小红书 → 发布笔记 → 粘贴');
+      const text = `财务自由计算器 📊 算算你需要多少存款才能退休！`;
+      if (isMobile) {
+        const shared = await tryNativeShare('财务自由计算器', text);
+        if (shared) return;
+      }
+      await copyToClipboard(`${text}\n${window.location.href}`);
+      showShareTip('✅ 已复制文案！打开小红书 → 发布笔记 → 粘贴');
     });
   }
 
