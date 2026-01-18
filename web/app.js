@@ -735,9 +735,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (isMobileDevice) {
           // 移动端竖版布局
-          const width = 750; // 适合手机屏幕宽度
-          const headerHeight = 200;
-          const chartAreaHeight = 480;
+          const width = 750;
+          const headerHeight = 260; // 增加头部空间
+          const chartAreaHeight = 520;
           const footerHeight = 60;
           
           exportCanvas.width = width;
@@ -749,30 +749,32 @@ document.addEventListener('DOMContentLoaded', () => {
           
           // 标题
           ctx.fillStyle = isDark ? '#f1f5f9' : '#0f172a';
-          ctx.font = 'bold 42px system-ui, -apple-system, sans-serif';
-          ctx.fillText('财务自由计算器', padding, padding + 40);
+          ctx.font = 'bold 48px system-ui, -apple-system, sans-serif';
+          ctx.fillText('财务自由计算器', padding, padding + 48);
           
           // 参数信息（分两行）
-          ctx.font = '24px system-ui, -apple-system, sans-serif';
-          ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
-          ctx.fillText(`年龄 ${age}岁 | 存款 ${formatLargeNumber(savings)} | 寿命 ${life}岁`, padding, padding + 90);
-          ctx.fillText(`通胀 ${inflationPct}% | 收益 ${nominalReturnPct}%`, padding, padding + 125);
-          
-          // 核心结果
-          ctx.font = 'bold 32px system-ui, -apple-system, sans-serif';
-          ctx.fillStyle = isDark ? '#22c55e' : '#047857';
-          ctx.fillText(`每月可支配: ${monthlyIncome}`, padding, padding + 175);
           ctx.font = '26px system-ui, -apple-system, sans-serif';
-          ctx.fillText(annualIncome, padding + 400, padding + 175);
+          ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+          ctx.fillText(`年龄 ${age}岁 · 存款 ${formatLargeNumber(savings)} · 寿命 ${life}岁`, padding, padding + 100);
+          ctx.fillText(`通胀率 ${inflationPct}% · 收益率 ${nominalReturnPct}%`, padding, padding + 138);
           
-          // 绘制图表（完整使用分配的空间）
+          // 核心结果（月收入大字，年收入小字在下方）
+          ctx.font = 'bold 40px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = isDark ? '#22c55e' : '#047857';
+          ctx.fillText(`每月可支配: ${monthlyIncome}`, padding, padding + 195);
+          
+          ctx.font = '28px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = isDark ? '#4ade80' : '#059669';
+          ctx.fillText(annualIncome, padding, padding + 235);
+          
+          // 绘制图表
           const chartW = width - padding * 2;
           const chartH = chartAreaHeight;
           ctx.drawImage(chartCanvas, padding, headerHeight, chartW, chartH);
           
-          // 底部水印（居中在 footer 区域）
+          // 底部水印
           const footerY = headerHeight + chartAreaHeight + (footerHeight / 2) + 8;
-          ctx.font = '22px system-ui, -apple-system, sans-serif';
+          ctx.font = '24px system-ui, -apple-system, sans-serif';
           ctx.fillStyle = isDark ? '#64748b' : '#94a3b8';
           ctx.fillText('fire-zeta.vercel.app', padding, footerY);
           ctx.textAlign = 'right';
