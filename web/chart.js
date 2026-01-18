@@ -95,9 +95,9 @@ export function drawDualAxisChart({ canvas, labels, balanceRaw, incomeRaw, start
               const ageMonths = absMonths % 12;
               const startAgeInt = Math.floor(startAge);
               if (ageMonths !== 0) return '';
-              // 移动端每10年显示，桌面端每5年显示
-              const isMobile = canvas.width < 500;
-              const interval = isMobile ? 10 : 5;
+              // 根据屏幕宽度决定标签间隔：窄屏每10年，宽屏每5年
+              const screenWidth = window.innerWidth || document.documentElement.clientWidth;
+              const interval = screenWidth < 600 ? 10 : 5;
               if (ageYears % interval !== 0 && ageYears !== startAgeInt) return '';
               return ageYears;
             },
