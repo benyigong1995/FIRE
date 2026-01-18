@@ -47,19 +47,24 @@ export function formatCurrency(value) {
   }
 }
 
+// 格式化大数字，去掉末尾无意义的 0（如 3.50万 → 3.5万）
+function trimTrailingZeros(numStr) {
+  return numStr.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+}
+
 export function formatLargeNumber(value) {
   const n = Number(value);
   if (!isFinite(n)) return '';
   const abs = Math.abs(n);
-  if (abs >= 1e8) return `${(n / 1e8).toFixed(2).replace(/\.00$/, '')}亿`;
-  if (abs >= 1e4) return `${(n / 1e4).toFixed(2).replace(/\.00$/, '')}万`;
+  if (abs >= 1e8) return `${trimTrailingZeros((n / 1e8).toFixed(2))}亿`;
+  if (abs >= 1e4) return `${trimTrailingZeros((n / 1e4).toFixed(2))}万`;
   try { return n.toLocaleString('zh-CN'); } catch { return String(n); }
 }
 
 export function formatWan(value) {
   const n = Number(value);
   if (!isFinite(n)) return '';
-  return `${(n / 1e4).toFixed(2).replace(/\.00$/, '')}万`;
+  return `${trimTrailingZeros((n / 1e4).toFixed(2))}万`;
 }
 
 // 反推：给定期望月开销（以今日购买力）、目标退休年龄，反推所需当前存款（以今日购买力）

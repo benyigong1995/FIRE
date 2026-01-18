@@ -189,8 +189,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const n = parseFormattedNumber(value);
     if (!isFinite(n) || n === 0) return '';
     const abs = Math.abs(n);
-    if (abs >= 1e8) return `= ${(n / 1e8).toFixed(2).replace(/\.00$/, '')} 亿`;
-    if (abs >= 1e4) return `= ${(n / 1e4).toFixed(2).replace(/\.00$/, '')} 万`;
+    const trim = s => s.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+    if (abs >= 1e8) return `= ${trim((n / 1e8).toFixed(2))} 亿`;
+    if (abs >= 1e4) return `= ${trim((n / 1e4).toFixed(2))} 万`;
     return '';
   }
 
