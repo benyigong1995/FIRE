@@ -112,4 +112,50 @@ export function calculateRequiredCurrentSavingsForDesiredRealIncome({
   };
 }
 
+/**
+ * 计算资金能维持的时长（年）
+ * @param {Object} params
+ * @param {number} params.savings 当前存款
+ * @param {number} params.monthlySpend 每月消费（今日购买力）
+ * @param {number} params.inflationPct 通胀率(%)
+ * @param {number} params.nominalReturnPct 名义回报率(%)
+ * @returns {number} 维持年数 (Infinity if sustainable)
+ */
+export function calculateDurationYears({ savings, monthlySpend, inflationPct, nominalReturnPct }) {
+  if (savings <= 0) return 0;
+  if (monthlySpend <= 0) return Infinity;
+
+  const inflation = inflationPct / 100.0;
+  const nominalReturn = nominalReturnPct / 100.0;
+  const realAnnual = (1 + nominalReturn) / (1 + inflation) - 1;
+  const realMonthly = monthlyRateFromAnnual(realAnnual);
+
+  // Case 0: 真实收益率约为 0
+  if (Math.abs(realMonthly) < 1e-9) {
+    return (savings / monthlySpend) / 12;
+  }
+
+  // Case 1: 永续 (Withdrawal rate < Real Return)
+  // Monthly Interest = savings * realMonthly
+  // If monthlySpend <= monthly interest, it grows or stays flat (in real terms)
+  if (realMonthly > 0 && monthlySpend <= savings * realMonthly) {
+    return Infinity;
+  }
+
+  // Case 2: 消耗
+  // Formula: N = -ln(1 - (r * PV) / w) / ln(1+r)
+  const ratio = (realMonthly * savings) / monthlySpend;
+  
+  // If ratio > 1, it means r*PV > w, covered by Case 1 (Infinity)
+  // But due to float precision, check again. 
+  // If we are here, ratio should be < 1 or realMonthly < 0.
+
+  // Log argument must be > 0 for finite duration
+  // 1 - ratio > 0  => ratio < 1
+  if (ratio >= 1 && realMonthly > 0) return Infinity;
+
+  const N = -Math.log(1 - ratio) / Math.log(1 + realMonthly);
+  return N / 12;
+}
+
 

@@ -8,6 +8,7 @@ import {
   formatLargeNumber,
   formatWan,
   calculateRequiredCurrentSavingsForDesiredRealIncome,
+  calculateDurationYears, // Imported
 } from './calc.js';
 import { drawDualAxisChart } from './chart.js';
 
@@ -405,6 +406,94 @@ document.addEventListener('DOMContentLoaded', () => {
     balanceChart = drawDualAxisChart({ canvas: chartCanvas, labels, balanceRaw, incomeRaw, startAge });
   }
 
+  // 生存矩阵渲染
+  function renderSurvivalMatrix({ baseSavings, baseSpend, inflationPct, nominalReturnPct, lifeExpectancy, currentAge }) {
+    const container = document.getElementById('survivalMatrix');
+    if (!container) return;
+
+    if (baseSavings <= 0 || baseSpend <= 0) {
+      container.innerHTML = '<div class="share-tip active" style="margin:0">请输入有效参数以生成矩阵</div>';
+      return;
+    }
+
+    // Generate Axis Steps (centered on base, +/- 3 steps of 10%)
+    const savingsSteps = [];
+    const stepSavings = baseSavings * 0.1;
+    for (let i = -3; i <= 3; i++) {
+      savingsSteps.push(baseSavings + i * stepSavings);
+    }
+
+    const spendSteps = [];
+    const stepSpend = baseSpend * 0.1;
+    for (let i = -3; i <= 3; i++) {
+      spendSteps.push(baseSpend + i * stepSpend);
+    }
+    // Sort spend desc (high spend on top? No, usually table rows increase downwards. Let's do low to high downwards)
+    // Actually, usually Y-axis low is bottom. But in a table, row 0 is top.
+    // Let's put Low Spend at top (Long duration), High Spend at bottom (Short duration).
+
+    let html = '<table><thead><tr><th>月销 \\ 存款</th>';
+    
+    // Column Headers (Savings)
+    savingsSteps.forEach(s => {
+      const label = formatWan(s); // e.g. "700万"
+      const isBase = Math.abs(s - baseSavings) < 1e-9;
+      html += `<th class="${isBase ? 'highlight-col' : ''}">${label}</th>`;
+    });
+    html += '</tr></thead><tbody>';
+
+    // Rows
+    spendSteps.forEach(monthly => {
+      const isBaseRow = Math.abs(monthly - baseSpend) < 1e-9;
+      const label = formatCurrency(monthly).replace(/\.00$/, ''); // "¥20,000"
+      
+      html += `<tr><th class="${isBaseRow ? 'highlight-row' : ''}">${label}</th>`;
+      
+      savingsSteps.forEach(sav => {
+        const isCenter = isBaseRow && Math.abs(sav - baseSavings) < 1e-9;
+        const years = calculateDurationYears({
+          savings: sav,
+          monthlySpend: monthly,
+          inflationPct,
+          nominalReturnPct
+        });
+
+        let cellClass = '';
+        let cellText = '';
+        
+        if (years === Infinity) {
+          cellClass = 'mat-infinity';
+          cellText = '∞';
+        } else {
+          const remainingLife = lifeExpectancy - currentAge;
+          const ratio = years / remainingLife;
+          
+          if (years >= remainingLife) {
+            cellClass = 'mat-success'; // Cover life
+            cellText = years.toFixed(1) + '年';
+          } else if (years < 5) {
+            cellClass = 'mat-danger';
+            cellText = years.toFixed(1) + '年';
+          } else {
+            cellClass = 'mat-warning';
+            cellText = years.toFixed(1) + '年';
+          }
+        }
+        
+        // Highlight center cell
+        const style = isCenter ? 'border: 2px solid var(--accent-blue);' : '';
+        
+        html += `<td class="${cellClass}" style="${style}">
+          <span class="cell-val">${cellText}</span>
+        </td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    
+    container.innerHTML = html;
+  }
+
   function onSubmit(e) {
     e.preventDefault();
     showError('');
@@ -445,6 +534,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const nominalMonthly = monthlyRateFromAnnual(nominal);
 
     const { w, months } = calculateMonthlySpendableIncome({ age, savings, life, inflationPct, nominalReturnPct });
+
+    // Render Survival Matrix
+    renderSurvivalMatrix({
+      baseSavings: savings,
+      baseSpend: w,
+      inflationPct,
+      nominalReturnPct,
+      lifeExpectancy: life,
+      currentAge: age
+    });
 
     monthlyEl.textContent = formatCurrency(w);
     // 显示年度金额
