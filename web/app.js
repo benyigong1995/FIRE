@@ -416,41 +416,73 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Helper: Round to nice numbers
+    // If val > 10000, round to nearest 100
+    // If val < 10000, round to nearest 100
+    function roundToNice(num) {
+      if (num > 10000) return Math.round(num / 100) * 100;
+      return Math.round(num / 10) * 10;
+    }
+
     // Generate Axis Steps (centered on base, +/- 3 steps of 10%)
     const savingsSteps = [];
-    const stepSavings = baseSavings * 0.1;
+    // Round base savings step to nice number (e.g. 100k)
+    const stepSavingsRaw = baseSavings * 0.1;
+    // Round step to nearest 10000 (1万) if possible, or 1000
+    let stepSavings = stepSavingsRaw;
+    if (stepSavings > 10000) stepSavings = Math.round(stepSavings / 10000) * 10000;
+    else if (stepSavings > 1000) stepSavings = Math.round(stepSavings / 1000) * 1000;
+
     for (let i = -3; i <= 3; i++) {
       savingsSteps.push(baseSavings + i * stepSavings);
     }
 
     const spendSteps = [];
-    const stepSpend = baseSpend * 0.1;
+    const stepSpendRaw = baseSpend * 0.1;
+    // Round spend step to nearest 100 or 500
+    let stepSpend = stepSpendRaw;
+    if (stepSpend > 500) stepSpend = Math.round(stepSpend / 500) * 500;
+    else stepSpend = Math.round(stepSpend / 100) * 100;
+
+    // Use rounded base for the center? No, use input base for center row highlight, but maybe align grid to rounded values?
+    // User wants "nice numbers".
+    // Let's re-center around a nice number close to baseSpend? 
+    // No, center row should represent current inputs. 
+    // BUT user complained "weird numbers".
+    // Strategy: use nice increments, and round the values.
+    
+    // Let's regenerate centered on rounded Base?
+    const niceBaseSpend = roundToNice(baseSpend);
+    
     for (let i = -3; i <= 3; i++) {
-      spendSteps.push(baseSpend + i * stepSpend);
+      spendSteps.push(niceBaseSpend + i * stepSpend);
     }
-    // Sort spend desc (high spend on top? No, usually table rows increase downwards. Let's do low to high downwards)
-    // Actually, usually Y-axis low is bottom. But in a table, row 0 is top.
-    // Let's put Low Spend at top (Long duration), High Spend at bottom (Short duration).
+    
+    // Sort spend (low to high, or high to low?)
+    // Let's keep low to high (standard axis).
 
     let html = '<table><thead><tr><th>月销 \\ 存款</th>';
     
     // Column Headers (Savings)
     savingsSteps.forEach(s => {
       const label = formatWan(s); // e.g. "700万"
-      const isBase = Math.abs(s - baseSavings) < 1e-9;
+      // Check if this column is the "current input" column (approx)
+      const isBase = Math.abs(s - baseSavings) < (stepSavings / 2);
       html += `<th class="${isBase ? 'highlight-col' : ''}">${label}</th>`;
     });
     html += '</tr></thead><tbody>';
 
     // Rows
     spendSteps.forEach(monthly => {
-      const isBaseRow = Math.abs(monthly - baseSpend) < 1e-9;
+      // Is this row close to the original base spend?
+      const isBaseRow = Math.abs(monthly - baseSpend) < (stepSpend / 2);
+      
       const label = formatCurrency(monthly).replace(/\.00$/, ''); // "¥20,000"
       
       html += `<tr><th class="${isBaseRow ? 'highlight-row' : ''}">${label}</th>`;
       
       savingsSteps.forEach(sav => {
-        const isCenter = isBaseRow && Math.abs(sav - baseSavings) < 1e-9;
+        const isCenter = isBaseRow && (Math.abs(sav - baseSavings) < (stepSavings / 2));
         const years = calculateDurationYears({
           savings: sav,
           monthlySpend: monthly,
@@ -460,18 +492,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let cellClass = '';
         let cellText = '';
+        const remainingLife = lifeExpectancy - currentAge;
         
-        if (years === Infinity) {
+        if (years === Infinity || years >= remainingLife) {
           cellClass = 'mat-infinity';
-          cellText = '∞';
+          cellText = '∞'; // Or "覆盖"
         } else {
-          const remainingLife = lifeExpectancy - currentAge;
-          const ratio = years / remainingLife;
+          // If years is very long but < remainingLife (rare if remainingLife is small), treat as safe?
+          // No, strictly compare.
           
-          if (years >= remainingLife) {
-            cellClass = 'mat-success'; // Cover life
-            cellText = years.toFixed(1) + '年';
-          } else if (years < 5) {
+          if (years < 5) {
             cellClass = 'mat-danger';
             cellText = years.toFixed(1) + '年';
           } else {
